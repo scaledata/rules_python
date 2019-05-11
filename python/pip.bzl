@@ -37,6 +37,7 @@ def _pip_import_impl(repository_ctx):
             repository_ctx.path(""),
         ] + repository_ctx.attr.extra_args,
         environment = repository_ctx.attr.environment,
+        quiet = repository_ctx.attr.quiet
     )
 
     if result.return_code:
@@ -50,6 +51,7 @@ pip_import = repository_rule(
         ),
         "environment": attr.string_dict(),
         "extra_args": attr.string_list(),
+        "quiet" : attr.bool(default=False),
         "_script": attr.label(
             executable = True,
             default = Label("//tools:piptool.par"),
