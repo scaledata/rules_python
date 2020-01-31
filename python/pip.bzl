@@ -24,8 +24,10 @@ def _pip_import_impl(repository_ctx):
 
     # To see the output, pass: quiet=False
     result = repository_ctx.execute([
-        "python",
+        repository_ctx.attr.python_interpreter,
         repository_ctx.path(repository_ctx.attr._script),
+        "--python_interpreter",
+        repository_ctx.attr.python_interpreter,
         "--name",
         repository_ctx.attr.name,
         "--input",
@@ -41,9 +43,14 @@ def _pip_import_impl(repository_ctx):
 
 pip_import = repository_rule(
     attrs = {
+        "python_interpreter": attr.string(default = "python", doc = """
+The command to run the Python interpreter used to invoke pip and unpack the
+wheels.
+"""),
         "requirements": attr.label(
             mandatory = True,
             allow_single_file = True,
+            doc = "The label of the requirements.txt file.",
         ),
         "_script": attr.label(
             executable = True,
@@ -52,24 +59,24 @@ pip_import = repository_rule(
         ),
     },
     implementation = _pip_import_impl,
-)
+    doc = """A rule for importing `requirements.txt` dependencies into Bazel.
 
-"""A rule for importing <code>requirements.txt</code> dependencies into Bazel.
+This rule imports a `requirements.txt` file and generates a new
+`requirements.bzl` file.  This is used via the `WORKSPACE` pattern:
 
-This rule imports a <code>requirements.txt</code> file and generates a new
-<code>requirements.bzl</code> file.  This is used via the <code>WORKSPACE</code>
-pattern:
-<pre><code>pip_import(
+```python
+pip_import(
     name = "foo",
     requirements = ":requirements.txt",
 )
 load("@foo//:requirements.bzl", "pip_install")
 pip_install()
-</code></pre>
+```
 
-You can then reference imported dependencies from your <code>BUILD</code>
-file with:
-<pre><code>load("@foo//:requirements.bzl", "requirement")
+You can then reference imported dependencies from your `BUILD` file with:
+
+```python
+load("@foo//:requirements.bzl", "requirement")
 py_library(
     name = "bar",
     ...
@@ -79,10 +86,11 @@ py_library(
        requirement("mock"),
     ],
 )
-</code></pre>
+```
 
 Or alternatively:
-<pre><code>load("@foo//:requirements.bzl", "all_requirements")
+```python
+load("@foo//:requirements.bzl", "all_requirements")
 py_binary(
     name = "baz",
     ...
@@ -90,16 +98,51 @@ py_binary(
        ":foo",
     ] + all_requirements,
 )
-</code></pre>
+```
+""",
+)
 
-Args:
-  requirements: The label of a requirements.txt file.
-"""
+# We don't provide a `pip2_import` that would use the `python2` system command
+# because this command does not exist on all platforms. On most (but not all)
+# systems, `python` means Python 2 anyway. See also #258.
+
+def pip3_import(**kwargs):
+    """A wrapper around pip_import that uses the `python3` system command.
+
+    Use this for requirements of PY3 programs.
+    """
+    pip_import(python_interpreter = "python3", **kwargs)
 
 def pip_repositories():
-    """Pull in dependencies needed for pulling in pip dependencies.
+    """Pull in dependencies needed to use the packaging rules."""
 
-    A placeholder method that will eventually pull in any dependencies
-    needed to install pip dependencies.
-    """
-    pass
+    # At the moment this is a placeholder, in that it does not actually pull in
+    # any dependencies. However, it does do some validation checking.
+    #
+    # As a side effect of migrating our canonical workspace name from
+    # "@io_bazel_rules_python" to "@rules_python" (#203), users who still
+    # imported us by the old name would get a confusing error about a
+    # repository dependency cycle in their workspace. (The cycle is likely
+    # related to the fact that our repo name is hardcoded into the template
+    # in piptool.py.)
+    #
+    # To produce a more informative error message in this situation, we
+    # fail-fast here if we detect that we're not being imported by the new
+    # name. (I believe we have always had the requirement that we're imported
+    # by the canonical name, because of the aforementioned hardcoding.)
+    #
+    # Users who, against best practice, do not call pip_repositories() in their
+    # workspace will not benefit from this check.
+    if "rules_python" not in native.existing_rules():
+        message = "=" * 79 + """\n\
+It appears that you are trying to import rules_python without using its
+canonical name, "@rules_python". This does not work. Please change your
+WORKSPACE file to import this repo with `name = "rules_python"` instead.
+"""
+        if "io_bazel_rules_python" in native.existing_rules():
+            message += """\n\
+Note that the previous name of "@io_bazel_rules_python" is no longer used.
+See https://github.com/bazelbuild/rules_python/issues/203 for context.
+"""
+        message += "=" * 79
+        fail(message)
