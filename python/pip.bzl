@@ -36,7 +36,9 @@ def _pip_import_impl(repository_ctx):
         repository_ctx.path("requirements.bzl"),
         "--directory",
         repository_ctx.path(""),
-    ])
+        ], environment = repository_ctx.attr.environment,
+        quiet = repository_ctx.attr.quiet,
+    )
 
     if result.return_code:
         fail("pip_import failed: %s (%s)" % (result.stdout, result.stderr))
@@ -52,6 +54,8 @@ wheels.
             allow_single_file = True,
             doc = "The label of the requirements.txt file.",
         ),
+	"environment": attr.string_dict(allow_empty=True),
+	"quiet": attr.bool(default=True),
         "_script": attr.label(
             executable = True,
             default = Label("//tools:piptool.par"),
